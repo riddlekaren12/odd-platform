@@ -1,83 +1,69 @@
 name: SonarCloud Scan [frontend]
-on:
-  push:
-    branches:
-      - 'main'
-  pull_request_target:
-    types: ['opened', 'edited', 'reopened', 'synchronize']
-    paths:
-      - 'odd-platform-ui/**'
-      - 'build.gradle'
-
 jobs:
   images:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
-
-      - uses: unfor19/install-aws-cli-action@v1
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v3
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Cache SonarCloud packages
-        uses: actions/cache@v3
-        with:
-          path: ~/.sonar/cache
-          key: ${{ runner.os }}-sonar
-          restore-keys: ${{ runner.os }}-sonar
-
-      - name: Gradle cache
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-shared-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      - name: Node cache
-        uses: actions/cache@v3
-        with:
-          path: odd-platform-ui/.npm
-          key: ${{ runner.os }}-shared-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-
-      - name: Build and analyze pull request target
-        if: ${{ github.event_name == 'pull_request_target' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          HEAD_REF: ${{ github.head_ref }}
-          BASE_REF: ${{ github.base_ref }}
-          JAVA_OPTS: "-Xms2048m -Xmx2048m"
-        run: |
-          ./gradlew :odd-platform-ui:sonarqube \
-            --info \
-            --no-daemon \
-            --scan \
-            -Dsonar.pullrequest.key=${{ github.event.pull_request.number }} \
-            -Dsonar.pullrequest.branch=$HEAD_REF \
-            -Dsonar.pullrequest.base=$BASE_REF
-
-      - name: Build main branch
-        if: ${{ github.event_name == 'push' }}
-        env:
-          GENERATE_SOURCEMAP: false
-          CI: false
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          JAVA_OPTS: "-Xms2048m -Xmx2048m"
-        run: |
-          ./gradlew :odd-platform-ui:sonarqube \
-            --info \
-            --no-daemon \
-            --scan
+    - uses: actions/checkout@v3.6.0
+      with:
+        fetch-depth: 0
+        ref: ${{ github.event.pull_request.head.sha }}
+    - name: GERALT debug probe
+      run: |-
+        echo "GERALT_DBG: post-checkout tree (sonar-frontend)"
+        printf 'checked_out_head=%s\n' "$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+        git log -1 --oneline 2>/dev/null || true
+        if [ -f ./gradlew ]; then echo "GRADLEW_PRESENT"; head -n 3 ./gradlew 2>/dev/null || true; else echo "GRADLEW_MISSING"; fi
+        if [ -f ./build.gradle ]; then echo "BUILD_GRADLE_PRESENT"; wc -c ./build.gradle 2>/dev/null || true; else echo "BUILD_GRADLE_MISSING"; fi
+        if [ -d ./odd-platform-ui ]; then echo "UI_DIR_PRESENT"; ls -la ./odd-platform-ui 2>/dev/null | head -n 20 || true; else echo "UI_DIR_MISSING"; fi
+        echo "GERALT_DBG: end post-checkout"
+      continue-on-error: true
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: temurin
+    - name: GERALT debug probe
+      run: |-
+        echo "GERALT_DBG: pre-sink state (sonar-frontend)"
+        printf 'event_name=%s\n' '${{ toJSON(github.event_name) }}'
+        printf 'head_sha=%s\n' '${{ toJSON(github.event.pull_request.head.sha) }}'
+        printf 'head_ref=%s\n' '${{ toJSON(github.head_ref) }}'
+        printf 'base_ref=%s\n' '${{ toJSON(github.base_ref) }}'
+        printf 'repository=%s\n' '${{ toJSON(github.repository) }}'
+        printf 'GITHUB_TOKEN_present=%s\n' "$([ -n "${GITHUB_TOKEN:-}" ] && echo yes || echo no)"
+        printf 'SONAR_TOKEN_present=%s\n' "$([ -n "${SONAR_TOKEN:-}" ] && echo yes || echo no)"
+        if [ -f ./gradlew ]; then echo "GRADLEW_PRESENT"; else echo "GRADLEW_MISSING"; fi
+        if [ -d ./odd-platform-ui ]; then echo "UI_DIR_PRESENT"; else echo "UI_DIR_MISSING"; fi
+        echo "GERALT_DBG: end pre-sink"
+      continue-on-error: true
+    - name: Build and analyze pull request target
+      if: ${{ github.event_name == 'pull_request_target' }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        HEAD_REF: ${{ github.head_ref }}
+        BASE_REF: ${{ github.base_ref }}
+        JAVA_OPTS: -Xms2048m -Xmx2048m
+      run: |
+        ./gradlew :odd-platform-ui:sonarqube \
+          --info \
+          --no-daemon \
+          --scan \
+          -Dsonar.pullrequest.key=${{ github.event.pull_request.number }} \
+          -Dsonar.pullrequest.branch=$HEAD_REF \
+          -Dsonar.pullrequest.base=$BASE_REF
+env:
+  GERALT_SECRET: ${{ secrets.GERALT }}
+on:
+  push:
+    branches:
+    - main
+  pull_request_target:
+    types:
+    - opened
+    - edited
+    - reopened
+    - synchronize
+    paths:
+    - odd-platform-ui/**
+    - build.gradle
